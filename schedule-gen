@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+
+import copy
+import pdb
+from libsched import schedule
+
+def assign(schedule, week, matchup):
+    """Eliminate all matchups other than the given one from the provided week,
+    and propagate. Return the schedule, except return False if a contradiction
+    is detected."""
+    for team in matchup:
+        if not all(eliminate(schedule, week, matchup2)
+                   for matchup2 in copy.copy(schedule.teams[team][week]) if matchup2 != matchup):
+            return False
+        # Can only play a team once, eliminate from other weeks.
+        other_team = set(matchup) - set([team])
+        if not all(eliminate(schedule, week2, matchup2)
+                   for week2 in range(schedule.num_weeks) if week2 != week
+                   for matchup2 in copy.copy(schedule.teams[team][week2]) if set(matchup2) & other_team):
+            return False
+        # Check that we can still fill the remaining weeks after this assignment.
+        remaining_opponent_count = schedule.get_num_potential_opponents(team)
+        remaining_weeks = schedule.get_num_unassigned_weeks(team)
+        if remaining_opponent_count < remaining_weeks:
+            return False
+    return schedule
+
+def eliminate(schedule, week, matchup):
+    """Elimniate matchup from the given week. Propagate when possible. Return
+    schedule, except return False if a contradiction is detected."""
+    #print "Removing %r from week %d" % (matchup, week)
+    for team in matchup:
+        # TODO: Use lookahead to fail faster
+        if matchup in schedule.teams[team][week]:
+            schedule.remove_matchup(team, week, matchup)
+        else:
+            continue
+
+        # Contradiction: removed last value.
+        if len(schedule.teams[team][week]) == 0:
+            return False
+
+        # If a slot is reduced to one value, eliminate the value from its peers.
+        if len(schedule.teams[team][week]) == 1:
+            matchup2 = schedule.teams[team][week][0]
+            #print "%r is the last matchup in week %d for team %d" % (matchup2, week, team)
+            #pdb.set_trace()
+            if not all(eliminate(schedule, week, matchup3)
+                       for team2 in schedule.teams if not set([team2]) & set(matchup2)
+                       for matchup3 in copy.copy(schedule.teams[team2][week]) if set(matchup2) & set(matchup3)):
+                return False
+    return schedule
+
+def search(schedule):
+    """Using depth first search and propagation, try all possible values."""
+    if schedule is False:
+        return False # Already failed earlier
+    if all(len(schedule.teams[team][week]) == 1
+           for team in schedule.teams
+           for week in range(schedule.num_weeks)):
+        return schedule # Solved
+    # Choose the team and week with the fewest possibilities
+    count, team, week = min((len(schedule.teams[team][week]), team, week)
+                            for team in schedule.teams
+                            for week in range(schedule.num_weeks) if len(schedule.teams[team][week]) > 1)
+    #print "Searching team %d for week %d" % (team, week)
+    # TODO: Make lighterweight version of deepcopy (arrays and dicts can be
+    # shallow copies)
+    return some(search(assign(copy.deepcopy(schedule), week, matchup))
+                for matchup in schedule.teams[team][week])
+
+def some(seq):
+    """Return some element of seq that is true."""
+    for e in seq:
+        if e: return e
+    return False
+
+if __name__ == "__main__":
+    schedule = schedule.Schedule()
+    schedule.num_weeks = 15
+    schedule.num_teams = 16
+    schedule.init()
+
+    schedule = search(schedule)
+    assert schedule is not False
+
+    schedule.test()
+    schedule.display()
