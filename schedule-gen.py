@@ -20,6 +20,9 @@ def test_preconditions():
 
 def test_postconditions(schedule):
     """A set of unit tests for validating post-conditions"""
+    assert schedule is not False
+    # TODO: Ensure that if team a plays team b for week x in team a's schedule,
+    # team b also thinks it is playing team a in week x.
     for team in schedule:
         for week in range(NUM_WEEKS):
             assert len(schedule[team][week]) > 0
@@ -38,6 +41,15 @@ def test_postconditions(schedule):
                            for week2 in range(NUM_WEEKS) if week2 != week
                            for matchup2 in schedule[team][week2])
 
+def get_potential_opponents(schedule, team):
+    def concat(a, b):
+        return set(list(a) + list(b))
+    opponents = reduce(concat, [set(matchup)
+                       for week in range(NUM_WEEKS)
+                       for matchup in schedule[team][week] if len(schedule[team][week]) > 1], set())
+    opponents = opponents - set([team])
+    return opponents
+
 def assign(schedule, week, matchup):
     """Eliminate all matchups other than the given one from the provided week,
     and propagate. Return the schedule, except return False if a contradiction
@@ -52,6 +64,11 @@ def assign(schedule, week, matchup):
                    for week2 in range(NUM_WEEKS) if week2 != week
                    for matchup2 in copy.copy(schedule[team][week2]) if set(matchup2) & other_team):
             return False
+        # Check that we can still fill the remaining weeks after this assignment.
+        remaining_opponent_count = len(get_potential_opponents(schedule, team))
+        remaining_weeks = sum(1 if len(x) > 1 else 0 for x in schedule[team])
+        if remaining_opponent_count < remaining_weeks:
+            return False
     return schedule
 
 def eliminate(schedule, week, matchup):
@@ -59,6 +76,7 @@ def eliminate(schedule, week, matchup):
     schedule, except return False if a contradiction is detected."""
     #print "Removing %r from week %d" % (matchup, week)
     for team in matchup:
+        # TODO: Use lookahead to fail faster
         if matchup in schedule[team][week]:
             schedule[team][week].remove(matchup)
         else:
@@ -91,6 +109,7 @@ def search(schedule):
     count, team, week = min((len(schedule[team][week]), team, week)
                             for team in teams
                             for week in range(NUM_WEEKS) if len(schedule[team][week]) > 1)
+    #print "Searching team %d for week %d" % (team, week)
     return some(search(assign(copy.deepcopy(schedule), week, matchup))
                 for matchup in schedule[team][week])
 
@@ -116,7 +135,7 @@ def display(schedule):
                 else:
                     print "  @%2d" % matchup[0],
             else:
-                print "  !!!",
+                print "    !",
             if week == NUM_WEEKS - 1: print ""
 
 # Generate the list of teams from 1-NUM_TEAMS.
@@ -132,7 +151,6 @@ init_schedule = dict((i, [copy.copy(team_matchups[i]) for _ in range(NUM_WEEKS)]
                     for i in teams)
 
 test_preconditions()
-
 final_schedule = search(init_schedule)
 test_postconditions(final_schedule)
 display(final_schedule)
