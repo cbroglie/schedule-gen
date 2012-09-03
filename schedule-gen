@@ -18,10 +18,21 @@ def assign(schedule, week, matchup):
                    for week2 in range(schedule.num_weeks) if week2 != week
                    for matchup2 in copy.copy(schedule.teams[team][week2]) if set(matchup2) & other_team):
             return False
-        # Check that we can still fill the remaining weeks after this assignment.
-        remaining_opponent_count = schedule.get_num_potential_opponents(team)
-        remaining_weeks = schedule.get_num_unassigned_weeks(team)
-        if remaining_opponent_count < remaining_weeks:
+        # If we are over the max home games, eliminate home matchups from other
+        # weeks.
+        if schedule.get_num_home_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
+            if not all(eliminate(schedule, week2, matchup2)
+                       for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
+                       for matchup2 in copy.copy(schedule.teams[team][week2]) if matchup2[0] == team):
+                return False
+        # Same for away games.
+        if schedule.get_num_away_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
+            if not all(eliminate(schedule, week2, matchup2)
+                       for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
+                       for matchup2 in copy.copy(schedule.teams[team][week2]) if matchup2[1] == team):
+                return False
+        # Check if we violated any constraints by removing other matchups.
+        if not schedule.valid(team):
             return False
     return schedule
 
