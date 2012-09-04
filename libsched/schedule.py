@@ -122,13 +122,28 @@ class Schedule:
         # Check that we don't have too many home or away games.
         if self.get_num_away_games(team) > ((self.num_weeks + 1) & ~0x1) / 2:
             return False
+        # For each matchup we are part of ensure the opposing team agrees, and
+        # verify we only play opposing teams at most once.
+        opponent_counts = {}
+        for week in range(self.num_weeks):
+            matchups = self.teams[team][week]
+            if len(matchups) == 1:
+                team2 = list(set(matchups[0]) - set([team]))[0]
+                if len(self.teams[team2][week]) != 1:
+                    return False
+                if not set(self.teams[team2][week][0]) & set([team]):
+                    return False
+                if not team2 in opponent_counts:
+                    opponent_counts[team2] = 0
+                opponent_counts[team2] += 1
+                if opponent_counts[team2] > 1:
+                    return False
         return True
 
     def test(self):
         """A set of unit tests"""
-        # TODO: Ensure that if team a plays team b for week x in team a's
-        # schedule, team b also thinks it is playing team a in week x.
         for team in self.teams:
+            assert self.valid(team)
             for week in range(self.num_weeks):
                 assert len(self.teams[team][week]) == 1
                 assert self.get_num_home_games(team) + self.get_num_away_games(team) == self.num_weeks
@@ -136,18 +151,18 @@ class Schedule:
                 assert self.get_num_away_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
                 if len(self.teams[team][week]) == 1:
                     matchup = self.teams[team][week][0]
-                    other_team = set(matchup) - set([team])
-                    assert len(other_team) == 1
-                    # Verify this team doesn't appear in the other team's schedule
-                    # any other week.
-                    assert all(not set(matchup2) & set([team])
-                               for week2 in range(self.num_weeks) if week2 != week
-                               for matchup2 in self.teams[list(other_team)[0]][week2])
-                    # Verify the other team doesn't appear in this team's schedule
-                    # any other week.
-                    assert all(not set(matchup2) & other_team
-                               for week2 in range(self.num_weeks) if week2 != week
-                               for matchup2 in self.teams[team][week2])
+                    team2 = list(set(matchup) - set([team]))[0]
+                    for week2 in range(self.num_weeks):
+                        assert len(self.teams[team2][week2]) == 1
+                        matchup2 = self.teams[team2][week2][0]
+                        if week2 == week: 
+                            if not set(matchup2) & set([team]):
+                                print "Team %d is not in team %d's matchup for week %d, but team %d is in team %d's matchup week %d" % (team, team2, week2+1, team2, team, week+1)
+                                assert False
+                        else:
+                            if set(matchup2) & set([team]):
+                                print "Team %d is in team %d's matchup for week %d, but team %d is in team %d's matchup week %d" % (team, team2, week2+1, team2, team, week+1)
+                                assert False
 
     def display(self):
         """Display the schedule as a 2D grid."""
