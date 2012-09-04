@@ -12,28 +12,55 @@ def assign(schedule, week, matchup):
         if not all(eliminate(schedule, week, matchup2)
                    for matchup2 in copy.copy(schedule.teams[team][week]) if matchup2 != matchup):
             return False
-        # Can only play a team once, eliminate from other weeks.
-        other_team = set(matchup) - set([team])
+        # Check how many times we can play this team. Eliminate matchups from
+        # all other weeks if we have hit the max, or all weeks within the min
+        # rematch buffer if we are under the limit still.
+        team2 = list(set(matchup) - set([team]))[0]
+        num_matchups = schedule.get_num_matchups(team, team2)
+        max_matchups = schedule.get_matchup_max(team, team2)
         if not all(eliminate(schedule, week2, matchup2)
-                   for week2 in range(schedule.num_weeks) if week2 != week
-                   for matchup2 in copy.copy(schedule.teams[team][week2]) if set(matchup2) & other_team):
+                   for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
+                   for matchup2 in copy.copy(schedule.teams[team][week2]) if set(matchup2) & set([team2]) and
+                                                                          (num_matchups >= max_matchups or
+                                                                           abs(week2 - week) <= schedule.min_weeks_between_matchups)):
+            #print "Failing from too many matchups"
             return False
+        # If we have hit the limit for divisional games, eliminate all other
+        # divisional matchups.
+        total_division_games = ((schedule.num_teams / schedule.num_divisions) - 1) * schedule.min_division_matchups
+        if schedule.get_num_division_games(team) >= total_division_games:
+            if not all(eliminate(schedule, week2, matchup2)
+                       for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
+                       for matchup2 in copy.copy(schedule.teams[team][week2]) if schedule.same_division(matchup2[0], matchup2[1])):
+                #print "Failing from too many divisional games"
+                return False
+        # If we have it the limit for non-divisional games, eliminate all other
+        # non-divisional games.
+        if schedule.get_num_non_division_games(team) >= schedule.num_weeks - total_division_games:
+            if not all(eliminate(schedule, week2, matchup2)
+                       for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
+                       for matchup2 in copy.copy(schedule.teams[team][week2]) if not schedule.same_division(matchup2[0], matchup2[1])):
+                #print "Failing from too many non-divisional games"
+                return False
         # If we are over the max home games, eliminate home matchups from other
         # weeks.
         if schedule.get_num_home_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
             if not all(eliminate(schedule, week2, matchup2)
                        for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
                        for matchup2 in copy.copy(schedule.teams[team][week2]) if matchup2[0] == team):
+                #print "Failing from too many home games"
                 return False
         # Same for away games.
         if schedule.get_num_away_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
             if not all(eliminate(schedule, week2, matchup2)
                        for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
                        for matchup2 in copy.copy(schedule.teams[team][week2]) if matchup2[1] == team):
+                #print "Failing from too many away games"
                 return False
     # Check if we violated any constraints by removing other matchups.
     for team in schedule.teams:
         if not schedule.valid(team):
+            #print "Failing from invalid schedule"
             return False
     return schedule
 
@@ -75,7 +102,7 @@ def search(schedule):
     count, team, week = min((len(schedule.teams[team][week]), team, week)
                             for team in schedule.teams
                             for week in range(schedule.num_weeks) if len(schedule.teams[team][week]) > 1)
-    #print "Searching team %d for week %d" % (team, week)
+    print "Searching team %d for week %d" % (team, week)
     # TODO: Make lighterweight version of deepcopy (arrays and dicts can be
     # shallow copies)
     return some(search(assign(copy.deepcopy(schedule), week, matchup))
@@ -89,8 +116,13 @@ def some(seq):
 
 if __name__ == "__main__":
     schedule = schedule.Schedule()
-    schedule.num_weeks = 15
+    schedule.num_weeks = 13
     schedule.num_teams = 16
+    schedule.num_divisions = 4
+    schedule.min_division_matchups = 2
+    schedule.max_division_matchups = 2
+    schedule.max_non_division_matchups = 1
+    schedule.min_weeks_between_matchups = 4
     schedule.init()
 
     schedule = search(schedule)

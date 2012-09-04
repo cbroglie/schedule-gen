@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+
+from libsched import schedule
+import sys
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print "Usage: %s <input file>" % sys.argv[0]
+        exit(1)
+
+    schedule = schedule.Schedule()
+    schedule.num_weeks = 13
+    schedule.num_teams = 16
+    schedule.num_divisions = 4
+    schedule.min_division_matchups = 2
+    schedule.max_division_matchups = 2
+    schedule.max_non_division_matchups = 1
+    schedule.min_weeks_between_matchups = 4
+    schedule.initFromFile(sys.argv[1])
+    schedule.test()
+    print "All tests pass."
+    
