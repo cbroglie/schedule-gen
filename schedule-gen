@@ -89,7 +89,7 @@ def some(seq):
 
 if __name__ == "__main__":
     schedule = schedule.Schedule()
-    schedule.num_weeks = 15
+    schedule.num_weeks = 13
     schedule.num_teams = 16
     schedule.init()
 
