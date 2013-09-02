@@ -9,28 +9,37 @@ def assign(schedule, week, matchup):
     and propagate. Return the schedule, except return False if a contradiction
     is detected."""
     for team in matchup:
-        if not all(eliminate(schedule, week, matchup2)
-                   for matchup2 in copy.copy(schedule.teams[team][week]) if matchup2 != matchup):
-            return False
+        for matchup2 in copy.copy(schedule.teams[team][week]):
+            if matchup2 == matchup:
+                continue
+            if not eliminate(schedule, week, matchup2):
+                return False
         # Can only play a team once, eliminate from other weeks.
         other_team = set(matchup) - set([team])
-        if not all(eliminate(schedule, week2, matchup2)
-                   for week2 in range(schedule.num_weeks) if week2 != week
-                   for matchup2 in copy.copy(schedule.teams[team][week2]) if set(matchup2) & other_team):
-            return False
+        for week2 in range(schedule.num_weeks):
+            if week2 == week:
+                continue
+            for matchup2 in copy.copy(schedule.teams[team][week2]):
+                if set(matchup2) & other_team:
+                    if not eliminate(schedule, week2, matchup2):
+                        return False
         # If we are over the max home games, eliminate home matchups from other
-        # weeks.
+        # unassigned weeks.
         if schedule.get_num_home_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
-            if not all(eliminate(schedule, week2, matchup2)
-                       for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
-                       for matchup2 in copy.copy(schedule.teams[team][week2]) if matchup2[0] == team):
-                return False
+            for week2 in range(schedule.num_weeks):
+                if week2 != week and len(schedule.teams[team][week2]) > 1:
+                    for matchup2 in copy.copy(schedule.teams[team][week2]):
+                        if matchup2[0] == team:
+                            if not eliminate(schedule, week2, matchup2):
+                                return False
         # Same for away games.
         if schedule.get_num_away_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
-            if not all(eliminate(schedule, week2, matchup2)
-                       for week2 in range(schedule.num_weeks) if week2 != week and len(schedule.teams[team][week2]) > 1
-                       for matchup2 in copy.copy(schedule.teams[team][week2]) if matchup2[1] == team):
-                return False
+            for week2 in range(schedule.num_weeks):
+                if week2 != week and len(schedule.teams[team][week2]) > 1:
+                    for matchup2 in copy.copy(schedule.teams[team][week2]):
+                        if matchup2[1] == team:
+                            if not eliminate(schedule, week2, matchup2):
+                                return False
     # Check if we violated any constraints by removing other matchups.
     for team in schedule.teams:
         if not schedule.valid(team):
@@ -57,10 +66,12 @@ def eliminate(schedule, week, matchup):
             matchup2 = schedule.teams[team][week][0]
             #print "%r is the last matchup in week %d for team %d" % (matchup2, week, team)
             #pdb.set_trace()
-            if not all(eliminate(schedule, week, matchup3)
-                       for team2 in schedule.teams if not set([team2]) & set(matchup2)
-                       for matchup3 in copy.copy(schedule.teams[team2][week]) if set(matchup2) & set(matchup3)):
-                return False
+            for team2 in schedule.teams:
+                if not set([team2]) & set(matchup2):
+                    for matchup3 in copy.copy(schedule.teams[team2][week]):
+                        if set(matchup2) & set(matchup3):
+                            if not eliminate(schedule, week, matchup3):
+                                return False
     return schedule
 
 def search(schedule):
@@ -78,13 +89,10 @@ def search(schedule):
     #print "Searching team %d for week %d" % (team, week)
     # TODO: Make lighterweight version of deepcopy (arrays and dicts can be
     # shallow copies)
-    return some(search(assign(copy.deepcopy(schedule), week, matchup))
-                for matchup in schedule.teams[team][week])
-
-def some(seq):
-    """Return some element of seq that is true."""
-    for e in seq:
-        if e: return e
+    for matchup in schedule.teams[team][week]:
+        result = search(assign(copy.deepcopy(schedule), week, matchup))
+        if result:
+            return result
     return False
 
 if __name__ == "__main__":
