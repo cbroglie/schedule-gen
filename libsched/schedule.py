@@ -73,6 +73,31 @@ class Schedule:
         self.teams = dict((i, [self.randomize_matchups(team_matchups[i]) for _ in range(self.num_weeks)])
                           for i in teams)
 
+    def initFromFile(self, filename):
+        self.teams = {}
+        def not_empty(value):
+            return value != ""
+        inputFile = file(filename)
+        tokens = filter(not_empty, inputFile.readline().strip().split(" "))
+        num_weeks = int(tokens[len(tokens) - 1])
+        print num_weeks
+        print self.num_weeks
+        assert num_weeks == self.num_weeks
+
+        tokens = filter(not_empty, inputFile.readline().strip().split(" "))
+        while len(tokens) > 0:
+            print len(tokens)
+            assert len(tokens) == num_weeks + 1
+            team = int(tokens.pop(0))
+            self.teams[team] = []
+            for token in tokens:
+                home = token[0] != "@"
+                if home:
+                    self.teams[team].append([(team, int(token))])
+                else:
+                    self.teams[team].append([(int(token[1:]), team)])
+            tokens = filter(not_empty, inputFile.readline().strip().split(" "))
+
     def randomize_matchups(self, matchups):
         matchups = copy.copy(matchups)
         random.shuffle(matchups)
@@ -307,9 +332,9 @@ class Schedule:
                 if len(self.teams[team][week]) == 1:
                     matchup = self.teams[team][week][0]
                     if matchup[0] == team:
-                        print "   %2d" % matchup[1],
+                        print "   %02d" % matchup[1],
                     else:
-                        print "  @%2d" % matchup[0],
+                        print "  @%02d" % matchup[0],
                 else:
                     print "    !",
                 if week == self.num_weeks - 1: print ""
