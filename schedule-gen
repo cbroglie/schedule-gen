@@ -8,21 +8,32 @@ def assign(schedule, week, matchup):
     """Eliminate all matchups other than the given one from the provided week,
     and propagate. Return the schedule, except return False if a contradiction
     is detected."""
+    schedule.debug("Assigning %r to week %d", matchup, week)
     for team in matchup:
         for matchup2 in copy.copy(schedule.teams[team][week]):
             if matchup2 == matchup:
                 continue
             if not eliminate(schedule, week, matchup2):
                 return False
-        # Can only play a team once, eliminate from other weeks.
-        other_team = set(matchup) - set([team])
+        # Check how many times we can play this team. Eliminate matchups from
+        # all other weeks if we have hit the max, or all weeks within the min
+        # rematch buffer if we are under the limit still.
+        otherTeam = list(set(matchup) - set([team]))[0]
+        numMatchups = schedule.get_num_matchups(team, otherTeam)
+        maxMatchups = schedule.get_matchup_max(team, otherTeam)
         for week2 in range(schedule.num_weeks):
-            if week2 == week:
+            if week2 == week or len(schedule.teams[team][week2]) == 1:
                 continue
             for matchup2 in copy.copy(schedule.teams[team][week2]):
-                if set(matchup2) & other_team:
-                    if not eliminate(schedule, week2, matchup2):
-                        return False
+                if set(matchup2) & set([otherTeam]):
+                    if numMatchups >= maxMatchups:
+                        schedule.verbose("Removing %r b/c team %d plays team %d %d times which is >= max of %d", matchup2, team, otherTeam, numMatchups, maxMatchups)
+                        if not eliminate(schedule, week2, matchup2):
+                            return False
+                    if abs(week2 - week) <= schedule.min_weeks_between_matchups:
+                        schedule.verbose("Removing %r b/c team %d plays team %d %d weeks apart, which is less than the min of %d", matchup2, team, otherTeam, abs(week2 - week), schedule.min_weeks_between_matchups)
+                        if not eliminate(schedule, week2, matchup2):
+                            return False
         # If we are over the max home games, eliminate home matchups from other
         # unassigned weeks.
         if schedule.get_num_home_games(team) >= ((schedule.num_weeks + 1) & ~0x1) / 2:
@@ -30,6 +41,7 @@ def assign(schedule, week, matchup):
                 if week2 != week and len(schedule.teams[team][week2]) > 1:
                     for matchup2 in copy.copy(schedule.teams[team][week2]):
                         if matchup2[0] == team:
+                            schedule.verbose("Removing %r b/c we have reached the max home games for team %d", matchup2, team)
                             if not eliminate(schedule, week2, matchup2):
                                 return False
         # Same for away games.
@@ -38,6 +50,7 @@ def assign(schedule, week, matchup):
                 if week2 != week and len(schedule.teams[team][week2]) > 1:
                     for matchup2 in copy.copy(schedule.teams[team][week2]):
                         if matchup2[1] == team:
+                            schedule.verbose("Removing %r b/c we have reached the max away games for team %d", matchup2, team)
                             if not eliminate(schedule, week2, matchup2):
                                 return False
     # Check if we violated any constraints by removing other matchups.
@@ -49,7 +62,7 @@ def assign(schedule, week, matchup):
 def eliminate(schedule, week, matchup):
     """Elimniate matchup from the given week. Propagate when possible. Return
     schedule, except return False if a contradiction is detected."""
-    #print "Removing %r from week %d" % (matchup, week)
+    schedule.debug("Removing %r from week %d", matchup, week)
     for team in matchup:
         # TODO: Use lookahead to fail faster
         if matchup in schedule.teams[team][week]:
@@ -59,6 +72,7 @@ def eliminate(schedule, week, matchup):
 
         # Contradiction: removed last value.
         if len(schedule.teams[team][week]) == 0:
+            schedule.debug("Backtracking b/c we removed the last matchup for a week")
             return False
 
         # If a slot is reduced to one value, eliminate the value from its peers.
@@ -86,7 +100,7 @@ def search(schedule):
     count, team, week = min((len(schedule.teams[team][week]), team, week)
                             for team in schedule.teams
                             for week in range(schedule.num_weeks) if len(schedule.teams[team][week]) > 1)
-    #print "Searching team %d for week %d" % (team, week)
+    schedule.debug("Searching team %d for week %d", team, week)
     # TODO: Make lighterweight version of deepcopy (arrays and dicts can be
     # shallow copies)
     for matchup in schedule.teams[team][week]:
@@ -99,6 +113,9 @@ if __name__ == "__main__":
     schedule = schedule.Schedule()
     schedule.num_weeks = 13
     schedule.num_teams = 16
+    schedule.min_matchups = 0
+    schedule.max_matchups = 1
+    schedule.min_weeks_between_matchups = 0
     schedule.init()
 
     schedule = search(schedule)

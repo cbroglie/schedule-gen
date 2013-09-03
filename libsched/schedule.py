@@ -20,7 +20,7 @@ def memoize(f):
             self.cache[team][fname] = False
         if not self.cache[team][fname]:
             self.cache[team][fname] = {}
-        if not args in self.cache[team][fname]:     
+        if not args in self.cache[team][fname]:
             self.cache[team][fname][args] = f(self, team, *args)
         #    print "...dirty"
         #else:
@@ -29,12 +29,23 @@ def memoize(f):
     return memoizedFunction
 
 class Schedule:
+    LOG_LEVEL_NONE = 0
+    LOG_LEVEL_ERROR = 1
+    LOG_LEVEL_DEBUG = 2
+    LOG_LEVEL_VERBOSE = 3
+
     def __init__(self):
+        self.log_level = self.LOG_LEVEL_ERROR
         self.num_weeks = 1
         self.num_teams = 2
+        self.min_matchups = 0
+        self.max_matchups = 1
+        self.min_weeks_between_matchups = 0
         self.cache = {}
 
     def init(self):
+        random.seed(2)
+
         """Setup the initial state based on the number of teams and weeks"""
         # Generate the list of teams from 1-num_teams.
         teams = [i + 1 for i in range(self.num_teams)]
@@ -79,6 +90,7 @@ class Schedule:
             self.cache[team][self.get_num_potential_opponents.__name__] = False
             self.cache[team][self.get_num_away_games.__name__] = False
             self.cache[team][self.get_num_home_games.__name__] = False
+            self.cache[team][self.get_num_matchups.__name__] = False
 
     @memoize
     def get_num_unassigned_weeks(self, team):
@@ -88,7 +100,13 @@ class Schedule:
     @memoize
     def get_num_potential_opponents(self, team):
         """Get the number of potential opponents remaining for the given team"""
-        return len(self.get_potential_opponents(team))
+        numPotential = 0
+        opponents = self.get_potential_opponents(team)
+        for opponent in opponents:
+            numMatchups = self.get_num_matchups(team, opponent)
+            maxMatchups = self.get_matchup_max(team, opponent)
+            numPotential += (maxMatchups - numMatchups)
+        return numPotential
 
     @memoize
     def get_num_home_games(self, team):
@@ -100,6 +118,21 @@ class Schedule:
         """Get the number of away games for the given team"""
         return self.num_weeks - self.get_num_unassigned_weeks(team) - self.get_num_home_games(team)
 
+    @memoize
+    def get_matchup_min(self, team, team2):
+        """Get the minimum amount of times 2 teams must matchup"""
+        return self.min_matchups
+
+    @memoize
+    def get_matchup_max(self, team, team2):
+        """Get the maximum amount of times 2 teams can matchup"""
+        return self.max_matchups
+
+    @memoize
+    def get_num_matchups(self, team, team2):
+        """Get the number of matchups between 2 teams"""
+        return sum(1 if len(matchups) == 1 and set(matchups[0]) & set([team2]) else 0 for matchups in self.teams[team])
+  
     def get_potential_opponents(self, team):
         """Get the list of potential oppoents remaining for the given team"""
         def concat_sets(a, b):
@@ -110,33 +143,79 @@ class Schedule:
         opponents = opponents - set([team])
         return list(opponents)
 
+    def error(self, format, *args):
+        if self.log_level >= self.LOG_LEVEL_ERROR:
+            self.log("[VERBOSE] " + format, *args)
+
+    def verbose(self, format, *args):
+        if self.log_level >= self.LOG_LEVEL_VERBOSE:
+            self.log("[VERBOSE] " + format, *args)
+
+    def debug(self, format, *args):
+        if self.log_level >= self.LOG_LEVEL_DEBUG:
+            self.log("[DEBUG] " + format, *args)
+
+    def log(self, format, *args):
+        if args:
+            print format % args
+        else:
+            print format
+
     def valid(self, team):
         # Check that we can still fill the remaining weeks after this assignment.
-        remaining_opponent_count = self.get_num_potential_opponents(team)
-        remaining_weeks = self.get_num_unassigned_weeks(team)
-        if remaining_opponent_count < remaining_weeks:
+        numPotentialOpponents = self.get_num_potential_opponents(team)
+        remainingWeeks = self.get_num_unassigned_weeks(team)
+        if numPotentialOpponents < remainingWeeks:
+            self.debug("Backtracking b/c there are fewer potential opponents (%d) than weeks remaining (%d) for team %d", numPotentialOpponents, remainingWeeks, team)
             return False
         # Check that we don't have too many home or away games.
         if self.get_num_home_games(team) > ((self.num_weeks + 1) & ~0x1) / 2:
+            self.debug("Backtracking b/c we have too many home games for team %d", team)
             return False
         # Check that we don't have too many home or away games.
         if self.get_num_away_games(team) > ((self.num_weeks + 1) & ~0x1) / 2:
+            self.debug("Backtracking b/c we have too many home games for team %d", team)
             return False
         # For each matchup we are part of ensure the opposing team agrees, and
-        # verify we only play opposing teams at most once.
-        opponent_counts = {}
+        # verify we only play the opposing team the correct amount of times.
+        teamMatchups = {}
         for week in range(self.num_weeks):
             matchups = self.teams[team][week]
-            if len(matchups) == 1:
+            if len(matchups) == 0:
+                self.debug("Backtracking b/c there are no possible matchups for week %d", week)
+                return False
+            elif len(matchups) == 1:
                 team2 = list(set(matchups[0]) - set([team]))[0]
                 if len(self.teams[team2][week]) != 1:
+                    self.debug("Backtracking b/c of matchup inconsistency in week %d for teams %d and %d", week, team, team2)
                     return False
                 if not set(self.teams[team2][week][0]) & set([team]):
+                    self.debug("Backtracking b/c of matchup inconsistency in week %d for teams %d and %d", week, team, team2)
                     return False
-                if not team2 in opponent_counts:
-                    opponent_counts[team2] = 0
-                opponent_counts[team2] += 1
-                if opponent_counts[team2] > 1:
+                if not team2 in teamMatchups:
+                    teamMatchups[team2] = []
+                teamMatchups[team2].append(week)
+                numMatchups = len(teamMatchups[team2])
+                maxMatchups = self.get_matchup_max(team, team2);
+                if numMatchups > maxMatchups:
+                    self.debug("Backtracking b/c team %d plays team %d %d times which is greater than the max of %d", team, team2, numMatchups, maxMatchups)
+                    return False
+        # If we have filled every week, we must also check matchup minimums.
+        if remainingWeeks == 0:
+            for team2 in self.teams:
+                if team2 == team:
+                    continue
+                numMatchups = len(teamMatchups[team2]) if team2 in teamMatchups else 0
+                minMatchups = self.get_matchup_min(team, team2)
+                if numMatchups < minMatchups:
+                    self.debug("Backtracking b/c team %d plays team %d %d times which is less than the min of %d", team, team2, numMatchups, minMatchups)
+                    return False
+        # Ensure we don't play a team twice within the matchup buffer.
+        for team2 in teamMatchups:
+            for i in range(len(teamMatchups[team2]) - 1):
+                numWeeksBetweenMatchups = abs(teamMatchups[team2][i] - teamMatchups[team2][i + 1])
+                if numWeeksBetweenMatchups < self.min_weeks_between_matchups:
+                    self.debug("Backtracking b/c team %d plays team %d %d weeks apart, which is less than the min of %d", team, team2, numWeeksBetweenMatchups, self.min_weeks_between_matchups)
                     return False
         return True
 
@@ -144,25 +223,28 @@ class Schedule:
         """A set of unit tests"""
         for team in self.teams:
             assert self.valid(team)
+            assert self.get_num_home_games(team) + self.get_num_away_games(team) == self.num_weeks
+            assert self.get_num_home_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
+            assert self.get_num_away_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
+            # Assert that 2 teams play each other the right amount of times.
+            for team2 in self.teams:
+                if team != team2:
+                    numMatchups = self.get_num_matchups(team, team2)
+                    assert numMatchups >= self.get_matchup_min(team, team2)
+                    assert numMatchups <= self.get_matchup_max(team, team2)
+            # Validate each matchup.
             for week in range(self.num_weeks):
                 assert len(self.teams[team][week]) == 1
-                assert self.get_num_home_games(team) + self.get_num_away_games(team) == self.num_weeks
-                assert self.get_num_home_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
-                assert self.get_num_away_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
-                if len(self.teams[team][week]) == 1:
-                    matchup = self.teams[team][week][0]
-                    team2 = list(set(matchup) - set([team]))[0]
-                    for week2 in range(self.num_weeks):
-                        assert len(self.teams[team2][week2]) == 1
-                        matchup2 = self.teams[team2][week2][0]
-                        if week2 == week: 
-                            if not set(matchup2) & set([team]):
-                                print "Team %d is not in team %d's matchup for week %d, but team %d is in team %d's matchup week %d" % (team, team2, week2+1, team2, team, week+1)
-                                assert False
-                        else:
-                            if set(matchup2) & set([team]):
-                                print "Team %d is in team %d's matchup for week %d, but team %d is in team %d's matchup week %d" % (team, team2, week2+1, team2, team, week+1)
-                                assert False
+                matchup = self.teams[team][week][0]
+                team2 = list(set(matchup) - set([team]))[0]
+                for week2 in range(self.num_weeks):
+                    assert len(self.teams[team2][week2]) == 1
+                    matchup2 = self.teams[team2][week2][0]
+                    if week2 == week: 
+                        if not set(matchup2) & set([team]):
+                            self.error("Team %d is NOT in team %d's matchup for week %d, but team %d is in team %d's matchup week %d", team, team2, week2+1, team2, team, week+1)
+                            assert False
+
 
     def display(self):
         """Display the schedule as a 2D grid."""
