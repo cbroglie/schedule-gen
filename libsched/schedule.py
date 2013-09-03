@@ -217,7 +217,7 @@ class Schedule:
 
     def error(self, format, *args):
         if self.log_level >= self.LOG_LEVEL_ERROR:
-            self.log("[VERBOSE] " + format, *args)
+            self.log("[ERROR] " + format, *args)
 
     def verbose(self, format, *args):
         if self.log_level >= self.LOG_LEVEL_VERBOSE:
