@@ -27,11 +27,11 @@ def assign(schedule, week, matchup):
             for matchup2 in copy.copy(schedule.teams[team][week2]):
                 if set(matchup2) & set([otherTeam]):
                     if numMatchups >= maxMatchups:
-                        schedule.verbose("Removing %r b/c team %d plays team %d %d times which is >= max of %d", matchup2, team, otherTeam, numMatchups, maxMatchups)
+                        schedule.verbose("Removing %r from week %d b/c team %d plays team %d %d times which is >= max of %d", matchup2, week, team, otherTeam, numMatchups, maxMatchups)
                         if not eliminate(schedule, week2, matchup2):
                             return False
                     if abs(week2 - week) <= schedule.min_weeks_between_matchups:
-                        schedule.verbose("Removing %r b/c team %d plays team %d %d weeks apart, which is less than the min of %d", matchup2, team, otherTeam, abs(week2 - week), schedule.min_weeks_between_matchups)
+                        schedule.verbose("Removing %r from week %d b/c team %d plays team %d %d weeks apart, which is less than the min of %d", matchup2, week, team, otherTeam, abs(week2 - week), schedule.min_weeks_between_matchups)
                         if not eliminate(schedule, week2, matchup2):
                             return False
         # If we are over the max home games, eliminate home matchups from other
@@ -75,15 +75,21 @@ def eliminate(schedule, week, matchup):
             schedule.debug("Backtracking b/c we removed the last matchup for a week")
             return False
 
-        # If a slot is reduced to one value, eliminate the value from its peers.
+        # If the possible matchups for this team is reduced to 1 for this week,
+        # iterate over the other teams' possible matchups for this week and
+        # remove any that involve this team or its opponent.
         if len(schedule.teams[team][week]) == 1:
             matchup2 = schedule.teams[team][week][0]
             #print "%r is the last matchup in week %d for team %d" % (matchup2, week, team)
-            #pdb.set_trace()
+            #pdb.set_trace() 
             for team2 in schedule.teams:
+                # Check teams not involved in the newly assigned matchup.
                 if not set([team2]) & set(matchup2):
                     for matchup3 in copy.copy(schedule.teams[team2][week]):
+                        # Check their potential matchups for this week. Remove
+                        # any involving the teams in the newly assigned matchup.
                         if set(matchup2) & set(matchup3):
+                            schedule.verbose("Removing %r from week %d b/c %r has been assigned", matchup3, week, matchup2)
                             if not eliminate(schedule, week, matchup3):
                                 return False
     return schedule
@@ -113,9 +119,12 @@ if __name__ == "__main__":
     schedule = schedule.Schedule()
     schedule.num_weeks = 13
     schedule.num_teams = 16
-    schedule.min_matchups = 0
-    schedule.max_matchups = 1
-    schedule.min_weeks_between_matchups = 0
+    schedule.num_divisions = 4
+    schedule.min_division_matchups = 2
+    schedule.max_division_matchups = 2
+    schedule.min_non_division_matchups = 0
+    schedule.max_non_division_matchups = 1
+    schedule.min_weeks_between_matchups = 2
     schedule.init()
 
     schedule = search(schedule)

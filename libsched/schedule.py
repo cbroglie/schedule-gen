@@ -38,8 +38,11 @@ class Schedule:
         self.log_level = self.LOG_LEVEL_ERROR
         self.num_weeks = 1
         self.num_teams = 2
-        self.min_matchups = 0
-        self.max_matchups = 1
+        self.num_divisions = 1
+        self.min_division_matchups = 1
+        self.max_division_matchups = 1
+        self.min_non_division_matchups = 0
+        self.max_non_division_matchups = 1
         self.min_weeks_between_matchups = 0
         self.cache = {}
 
@@ -47,6 +50,8 @@ class Schedule:
         random.seed(2)
 
         """Setup the initial state based on the number of teams and weeks"""
+        assert self.num_teams % self.num_divisions == 0
+
         # Generate the list of teams from 1-num_teams.
         teams = [i + 1 for i in range(self.num_teams)]
 
@@ -91,6 +96,13 @@ class Schedule:
             self.cache[team][self.get_num_away_games.__name__] = False
             self.cache[team][self.get_num_home_games.__name__] = False
             self.cache[team][self.get_num_matchups.__name__] = False
+            self.cache[team][self.get_num_division_games.__name__] = False
+            self.cache[team][self.get_num_non_division_games.__name__] = False
+
+    @memoize
+    def get_other_teams(self, team):
+        """Return the teams excluding the given team"""
+        return [t for t in self.teams if t != team]
 
     @memoize
     def get_num_unassigned_weeks(self, team):
@@ -109,6 +121,17 @@ class Schedule:
         return numPotential
 
     @memoize
+    def get_division(self, team):
+        """Return the division for a given team"""
+        num_teams_per_division = self.num_teams / self.num_divisions
+        return int((team + num_teams_per_division - 1) / num_teams_per_division)
+
+    @memoize
+    def same_division(self, team, team2):
+        """Check whether 2 teams are in the same division"""
+        return self.get_division(team) == self.get_division(team2)
+
+    @memoize
     def get_num_home_games(self, team):
         """Get the number of home games for the given team"""
         return sum(1 if len(matchups) == 1 and matchups[0][0] == team else 0 for matchups in self.teams[team])
@@ -121,18 +144,34 @@ class Schedule:
     @memoize
     def get_matchup_min(self, team, team2):
         """Get the minimum amount of times 2 teams must matchup"""
-        return self.min_matchups
+        if self.same_division(team, team2):
+            return self.min_division_matchups
+        else:
+            return self.min_non_division_matchups
 
     @memoize
     def get_matchup_max(self, team, team2):
         """Get the maximum amount of times 2 teams can matchup"""
-        return self.max_matchups
+        if self.same_division(team, team2):
+            return self.max_division_matchups
+        else:
+            return self.max_non_division_matchups
 
     @memoize
     def get_num_matchups(self, team, team2):
         """Get the number of matchups between 2 teams"""
         return sum(1 if len(matchups) == 1 and set(matchups[0]) & set([team2]) else 0 for matchups in self.teams[team])
-  
+
+    @memoize
+    def get_num_division_games(self, team):
+        """Get the number of divisional games for the given team"""
+        return sum(1 if len(matchups) == 1 and self.same_division(matchups[0][0], matchups[0][1]) else 0 for matchups in self.teams[team])
+
+    @memoize
+    def get_num_non_division_games(self, team):
+        """Get the number of non-divisional games for the given team"""
+        return self.num_weeks - self.get_num_unassigned_weeks(team) - self.get_num_division_games(team)
+
     def get_potential_opponents(self, team):
         """Get the list of potential oppoents remaining for the given team"""
         def concat_sets(a, b):
@@ -167,6 +206,7 @@ class Schedule:
         remainingWeeks = self.get_num_unassigned_weeks(team)
         if numPotentialOpponents < remainingWeeks:
             self.debug("Backtracking b/c there are fewer potential opponents (%d) than weeks remaining (%d) for team %d", numPotentialOpponents, remainingWeeks, team)
+            self.debug("opponents=%r", self.get_potential_opponents(team))
             return False
         # Check that we don't have too many home or away games.
         if self.get_num_home_games(team) > ((self.num_weeks + 1) & ~0x1) / 2:
@@ -226,6 +266,7 @@ class Schedule:
             assert self.get_num_home_games(team) + self.get_num_away_games(team) == self.num_weeks
             assert self.get_num_home_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
             assert self.get_num_away_games(team) <= ((self.num_weeks + 1) & ~0x1) / 2
+            assert self.get_num_division_games(team) + self.get_num_non_division_games(team) == self.num_weeks
             # Assert that 2 teams play each other the right amount of times.
             for team2 in self.teams:
                 if team != team2:
