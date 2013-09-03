@@ -3,6 +3,8 @@
 import copy
 import pdb
 from libsched import schedule
+import random
+import sys
 
 def assign(schedule, week, matchup):
     """Eliminate all matchups other than the given one from the provided week,
@@ -103,9 +105,28 @@ def search(schedule):
            for week in range(schedule.num_weeks)):
         return schedule # Solved
     # Choose the team and week with the fewest possibilities
-    count, team, week = min((len(schedule.teams[team][week]), team, week)
-                            for team in schedule.teams
-                            for week in range(schedule.num_weeks) if len(schedule.teams[team][week]) > 1)
+    min = sys.maxint
+    num = 0
+    for t in schedule.teams:
+        for w in range(schedule.num_weeks):
+            count = len(schedule.teams[t][w])
+            if count == 1:
+                # This week has been assigned, skip over it
+                continue
+            elif count < min:
+                # New minimum team/week, use it
+                team = t
+                week = w
+                min = count
+                num = 1
+            elif min == count:
+                # Tied the minimum team/week, random chance to use it
+                num += 1
+                chance = random.randint(1, num)
+                if chance == num:
+                    team = t
+                    week = w
+
     schedule.debug("Searching team %d for week %d", team, week)
     # TODO: Make lighterweight version of deepcopy (arrays and dicts can be
     # shallow copies)

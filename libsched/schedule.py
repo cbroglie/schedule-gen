@@ -47,8 +47,6 @@ class Schedule:
         self.cache = {}
 
     def init(self):
-        random.seed(2)
-
         """Setup the initial state based on the number of teams and weeks"""
         assert self.num_teams % self.num_divisions == 0
 
@@ -78,7 +76,17 @@ class Schedule:
     def randomize_matchups(self, matchups):
         matchups = copy.copy(matchups)
         random.shuffle(matchups)
-        return matchups
+        divisionMatchups = []
+        nonDivisionMatchups = []
+        # Move the division matchups to the front so they are evaluated first.
+        # This is an optimization that assumes the requirements for division
+        # games are harder to meet than for non-divisional games.
+        for matchup in matchups:
+            if self.same_division(matchup[0], matchup[1]):
+                divisionMatchups.append(matchup)
+            else:
+                nonDivisionMatchups.append(matchup)
+        return divisionMatchups + nonDivisionMatchups
 
     def generate_matchups(self, teams):
         return [(a, b) for a in teams for b in teams if a != b]
