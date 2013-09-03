@@ -313,3 +313,12 @@ class Schedule:
                 else:
                     print "    !",
                 if week == self.num_weeks - 1: print ""
+
+    def csv(self):
+        """Display the schedule in csv format."""
+        print "Week,Home,Away"
+        for week in range(self.num_weeks):
+            for team in self.teams:
+                matchup = self.teams[team][week][0]
+                if matchup[0] == team:
+                    print "%d,Team-%02d,Team-%02d" % (week + 1, matchup[0], matchup[1])
